@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Everyday Information Survey v1.0</title>
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="assets/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Everyday Information Survey</p>
+        <h1>Participant Survey</h1>
+      </div>
+      <div class="version">v1.0</div>
+    </header>
+
+    <main id="app" class="survey-shell" aria-live="polite"></main>
+
+    <template id="slider-template">
+      <fieldset class="slider-field" data-slider-field>
+        <legend></legend>
+        <div class="slider-row">
+          <input type="range" min="1" max="100" value="50">
+          <output aria-live="polite">Not answered</output>
+        </div>
+        <div class="scale-labels">
+          <span data-left></span>
+          <span data-mid></span>
+          <span data-right></span>
+        </div>
+      </fieldset>
+    </template>
+
+    <script src="assets/app.js"></script>
+  </body>
+</html>

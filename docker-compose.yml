@@ -1,0 +1,17 @@
+services:
+  survey-db:
+    image: postgres:16
+    container_name: everyday-information-survey-db
+    environment:
+      POSTGRES_DB: everyday_information_survey
+      POSTGRES_USER: survey_admin
+      POSTGRES_PASSWORD: survey_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - survey-db-data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+
+volumes:
+  survey-db-data:
