@@ -1,8 +1,10 @@
 (function () {
   "use strict";
 
-  const STORAGE_KEY = "everydayInformationSurvey.v1";
-  const COMPLETION_KEY = "everydayInformationSurvey.conditionBlocks.v1";
+  const STORAGE_KEY = "everydayInformationSurvey.v1.1";
+  const COMPLETION_KEY = "everydayInformationSurvey.conditionBlocks.v1.1";
+  const APP_VERSION = "1.1";
+  const config = window.SURVEY_CONFIG || {};
 
   const categories = [
     { id: "health", name: "Health and Science" },
@@ -83,9 +85,25 @@
 
   const app = document.getElementById("app");
 
-  let state = loadState() || createInitialState();
+  let state = normalizeState(loadState() || createInitialState());
 
-  function uid(prefix) {
+  function uuid() {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+      return window.crypto.randomUUID();
+    }
+    if (window.crypto && typeof window.crypto.getRandomValues === "function") {
+      return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (character) =>
+        (Number(character) ^ window.crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> Number(character) / 4).toString(16)
+      );
+    }
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (character) => {
+      const random = Math.random() * 16 | 0;
+      const value = character === "x" ? random : (random & 0x3 | 0x8);
+      return value.toString(16);
+    });
+  }
+
+  function token(prefix) {
     if (window.crypto && typeof window.crypto.randomUUID === "function") {
       return `${prefix}_${window.crypto.randomUUID()}`;
     }
@@ -117,7 +135,7 @@
   }
 
   function createInitialState() {
-    const participantId = uid("participant");
+    const participantId = uuid();
     const conditionId = nextConditionId();
     const selectedByCategory = {};
     for (const category of categories) {
@@ -131,7 +149,7 @@
       const statement = selectedByCategory[categoryId];
       const sourceId = conditionAssignments[conditionId][categoryId];
       return {
-        id: uid("trial"),
+        id: uuid(),
         participant_id: participantId,
         trial_number: index + 1,
         display_order: index + 1,
@@ -151,12 +169,12 @@
     });
 
     return {
-      version: "1.0",
+      version: APP_VERSION,
       screen: "consent",
       currentTrialIndex: 0,
       participant: {
         id: participantId,
-        public_token: uid("token"),
+        public_token: token("token"),
         consent_status: "not_answered",
         consented_at: null,
         age_band: "",
@@ -170,7 +188,12 @@
         completed_at: null
       },
       trials,
-      responses: []
+      responses: [],
+      remote: {
+        status: "disabled",
+        message: "",
+        submitted_at: null
+      }
     };
   }
 
@@ -194,6 +217,12 @@
     }
   }
 
+  function normalizeState(candidate) {
+    candidate.version = candidate.version || APP_VERSION;
+    candidate.remote = candidate.remote || { status: "disabled", message: "", submitted_at: null };
+    return candidate;
+  }
+
   function resetSurvey() {
     localStorage.removeItem(STORAGE_KEY);
     state = createInitialState();
@@ -209,7 +238,7 @@
       item.item_key === response.item_key;
     state.responses = state.responses.filter((item) => !sameItem(item));
     state.responses.push({
-      id: uid("response"),
+      id: uuid(),
       submitted_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
       ...response
@@ -503,17 +532,22 @@
           <div class="summary-item"><strong>Trials recorded</strong>${rows.length}</div>
           <div class="summary-item"><strong>Item responses</strong>${state.responses.length}</div>
         </div>
+        <div class="notice" id="remote-status">
+          ${remoteStatusMarkup()}
+        </div>
         <div class="notice warning">
           <strong>Study contact:</strong> ______________________________________________<br>
           <strong>Supervising researcher or institution:</strong> _____________________________
         </div>
         <div class="actions">
+          <button class="button" data-action="retry-remote-submit">Retry database submit</button>
           <button class="button" data-action="download-json">Download JSON</button>
           <button class="button" data-action="download-csv">Download CSV</button>
           <button class="button danger" data-action="reset">Start a new pilot response</button>
         </div>
       </section>
     `);
+    maybeSubmitToSupabase();
   }
 
   function handleAction(event) {
@@ -525,6 +559,7 @@
     if (action === "submit-final-check") submitFinalCheck(event);
     if (action === "download-json") downloadJson();
     if (action === "download-csv") downloadCsv();
+    if (action === "retry-remote-submit") retryRemoteSubmit();
     if (action === "reset") resetSurvey();
   }
 
@@ -655,6 +690,145 @@
       item_responses: state.responses,
       trial_results_wide: buildTrialRows()
     };
+  }
+
+  function remoteEnabled() {
+    return Boolean(config.enableRemoteSubmit && config.supabaseUrl && config.supabaseAnonKey);
+  }
+
+  function remoteStatusMarkup() {
+    if (!remoteEnabled()) {
+      return "<strong>Database submit:</strong> Disabled. This pilot response is saved in this browser and can be downloaded as JSON or CSV.";
+    }
+    if (state.remote.status === "submitted") {
+      return `<strong>Database submit:</strong> Submitted to Supabase at ${escapeHtml(state.remote.submitted_at)}.`;
+    }
+    if (state.remote.status === "submitting") {
+      return "<strong>Database submit:</strong> Submitting to Supabase...";
+    }
+    if (state.remote.status === "failed") {
+      return `<strong>Database submit:</strong> Failed. ${escapeHtml(state.remote.message)} You can retry or download JSON/CSV.`;
+    }
+    return "<strong>Database submit:</strong> Ready to submit to Supabase.";
+  }
+
+  function updateRemoteStatus() {
+    const element = document.getElementById("remote-status");
+    if (element) element.innerHTML = remoteStatusMarkup();
+  }
+
+  function retryRemoteSubmit() {
+    if (!remoteEnabled()) {
+      state.remote.status = "disabled";
+      state.remote.message = "Remote submit is not configured.";
+      saveState();
+      updateRemoteStatus();
+      return;
+    }
+    if (state.remote.status === "submitting") return;
+    state.remote.status = "ready";
+    state.remote.message = "";
+    state.remote.submitted_at = null;
+    saveState();
+    updateRemoteStatus();
+    maybeSubmitToSupabase({ force: true });
+  }
+
+  async function maybeSubmitToSupabase(options = {}) {
+    if (!remoteEnabled()) {
+      state.remote.status = "disabled";
+      state.remote.message = "";
+      saveState();
+      updateRemoteStatus();
+      return;
+    }
+    if (!options.force && (state.remote.status === "submitted" || state.remote.status === "submitting")) {
+      updateRemoteStatus();
+      return;
+    }
+    state.remote.status = "submitting";
+    state.remote.message = "";
+    saveState();
+    updateRemoteStatus();
+    try {
+      await submitPayloadToSupabase(exportPayload());
+      state.remote.status = "submitted";
+      state.remote.submitted_at = new Date().toISOString();
+      state.remote.message = "";
+    } catch (error) {
+      state.remote.status = "failed";
+      state.remote.message = error.message || String(error);
+    }
+    saveState();
+    updateRemoteStatus();
+  }
+
+  async function submitPayloadToSupabase(payload) {
+    const participant = {
+      id: payload.participant.id,
+      public_token: payload.participant.public_token,
+      consent_status: payload.participant.consent_status,
+      consented_at: payload.participant.consented_at,
+      age_band: payload.participant.age_band,
+      education_level: payload.participant.education_level,
+      gender: payload.participant.gender,
+      gender_self_describe: payload.participant.gender_self_describe,
+      condition_id: payload.participant.condition_id,
+      category_order: payload.participant.category_order,
+      completion_status: payload.participant.completion_status,
+      started_at: payload.participant.started_at,
+      completed_at: payload.participant.completed_at
+    };
+    const trials = payload.trials.map((trial) => ({
+      id: trial.id,
+      participant_id: payload.participant.id,
+      trial_number: trial.trial_number,
+      display_order: trial.display_order,
+      category_id: trial.category_id,
+      statement_id: trial.statement_id,
+      source_id: trial.source_id,
+      pre_source_started_at: trial.pre_source_started_at,
+      pre_source_submitted_at: trial.pre_source_submitted_at,
+      post_source_started_at: trial.post_source_started_at,
+      post_source_submitted_at: trial.post_source_submitted_at,
+      locked_pre_source: trial.locked_pre_source
+    }));
+    const responses = payload.item_responses.map((response) => ({
+      id: response.id,
+      participant_id: response.participant_id,
+      trial_id: response.trial_id,
+      phase: response.phase,
+      item_key: response.item_key,
+      response_type: response.response_type,
+      numeric_value: response.numeric_value,
+      text_value: response.text_value,
+      option_value: response.option_value,
+      interacted: response.interacted,
+      submitted_at: response.submitted_at,
+      created_at: response.created_at
+    }));
+
+    await supabaseInsert("participants", participant);
+    await supabaseInsert("participant_trials", trials);
+    await supabaseInsert("survey_item_responses", responses);
+  }
+
+  async function supabaseInsert(table, rows) {
+    const url = `${config.supabaseUrl.replace(/\/$/, "")}/rest/v1/${table}`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        apikey: config.supabaseAnonKey,
+        Authorization: `Bearer ${config.supabaseAnonKey}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal"
+      },
+      body: JSON.stringify(rows)
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`${table} insert failed (${response.status}): ${body}`);
+    }
   }
 
   function downloadJson() {

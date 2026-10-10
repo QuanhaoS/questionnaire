@@ -1,8 +1,61 @@
 # Everyday Information Survey 可分享问卷方案
 
+## version1.1 已实现
+
+本项目现在包含一个 GitHub Pages + Supabase-ready 的 `version1.1`。
+
+v1.1 新增：
+
+- GitHub Pages 自动部署工作流：[.github/workflows/pages.yml](/Users/sunquanhao/Documents/ChatGPT/Elly/.github/workflows/pages.yml)
+- Supabase 前端配置文件：[assets/config.js](/Users/sunquanhao/Documents/ChatGPT/Elly/assets/config.js)
+- Supabase RLS 权限脚本：[database/supabase-rls.sql](/Users/sunquanhao/Documents/ChatGPT/Elly/database/supabase-rls.sql)
+- 数据库兼容 UUID，用于直接写入 PostgreSQL/Supabase。
+- 完成问卷后自动提交到 Supabase；如果未配置 Supabase，继续保留本地 JSON/CSV 下载。
+
+### GitHub Pages 发布
+
+代码已经包含 GitHub Actions Pages workflow。推送到 `main` 后，GitHub 会尝试部署静态站点。
+
+如果第一次没有自动发布，到 GitHub repo 页面设置：
+
+1. 打开 `Settings`。
+2. 打开 `Pages`。
+3. `Build and deployment` 的 `Source` 选择 `GitHub Actions`。
+4. 回到 `Actions` 页面，重新运行 `Deploy static survey to GitHub Pages`。
+
+发布成功后的地址通常是：
+
+```text
+https://quanhaos.github.io/questionnaire/
+```
+
+### Supabase 自动保存配置
+
+在 Supabase SQL Editor 按顺序运行：
+
+1. `database/schema.sql`
+2. `database/seed.sql`
+3. `database/supabase-rls.sql`
+
+然后编辑 `assets/config.js`：
+
+```js
+window.SURVEY_CONFIG = {
+  enableRemoteSubmit: true,
+  supabaseUrl: "https://YOUR_PROJECT_ID.supabase.co",
+  supabaseAnonKey: "YOUR_SUPABASE_PUBLISHABLE_OR_ANON_KEY"
+};
+```
+
+注意：
+
+- 不要把 Supabase `service_role` key 放进 `assets/config.js`。
+- `assets/config.js` 只能放 publishable/anon key。
+- `database/supabase-rls.sql` 只允许匿名插入，不允许匿名读取、更新或删除。
+
 ## version1.0 已实现
 
-本项目现在包含一个可运行的 `version1.0` 静态 Web 问卷应用。
+本项目也保留了 `version1.0` 的本地 pilot 能力。
 
 入口文件：
 

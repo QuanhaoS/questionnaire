@@ -65,10 +65,30 @@ class StaticSurveyTests(unittest.TestCase):
         self.assertIn("localStorage", app_js)
         self.assertIn("Download CSV", app_js)
         self.assertIn("Download JSON", app_js)
+        self.assertIn("submitPayloadToSupabase", app_js)
+        self.assertIn("/rest/v1/", app_js)
 
-    def test_readme_mentions_version_one(self):
+    def test_pages_workflow_exists(self):
+        workflow = (ROOT / ".github" / "workflows" / "pages.yml").read_text()
+        self.assertIn("actions/configure-pages", workflow)
+        self.assertIn("actions/upload-pages-artifact", workflow)
+        self.assertIn("actions/deploy-pages", workflow)
+        self.assertIn('branches: ["main"]', workflow)
+
+    def test_supabase_config_and_rls_exist(self):
+        config = (ROOT / "assets" / "config.js").read_text()
+        rls = (ROOT / "database" / "supabase-rls.sql").read_text()
+        self.assertIn("enableRemoteSubmit", config)
+        self.assertIn("supabaseUrl", config)
+        self.assertIn("supabaseAnonKey", config)
+        self.assertIn("enable row level security", rls)
+        self.assertIn("grant insert on participants to anon", rls)
+        self.assertNotIn("service_role", config)
+
+    def test_readme_mentions_versions(self):
         readme = (ROOT / "README.md").read_text()
         self.assertIn("version1.0", readme.lower().replace(" ", ""))
+        self.assertIn("version1.1", readme.lower().replace(" ", ""))
 
 
 if __name__ == "__main__":

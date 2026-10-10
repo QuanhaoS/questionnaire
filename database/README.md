@@ -6,6 +6,7 @@
 
 - `schema.sql`：建表、索引、约束和分析视图。
 - `seed.sql`：导入 statement library、source library 和 C1-C7 balanced conditions。
+- `supabase-rls.sql`：允许公网静态网页匿名插入问卷结果，同时禁止匿名读取数据。
 
 ## 表结构
 
@@ -44,8 +45,11 @@ password: survey_dev_password
 1. 打开 SQL Editor。
 2. 先运行 `schema.sql`。
 3. 再运行 `seed.sql`。
-4. 后端服务使用 Supabase service role key 写入数据。
-5. 前端不要直接暴露 service role key。
+4. 再运行 `supabase-rls.sql`。
+5. 在前端配置 `assets/config.js` 中的 Supabase URL 和 publishable/anon key。
+6. 不要把 service role key 放进前端或 GitHub。
+
+`assets/config.js` 使用的是 publishable/anon key。这个 key 可以出现在浏览器里，但必须依赖 Row Level Security 限制权限。`supabase-rls.sql` 只给匿名用户插入权限，不给读取、更新或删除权限。
 
 ## 每一项结果如何保存
 
