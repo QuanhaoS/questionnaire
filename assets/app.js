@@ -693,7 +693,7 @@
   }
 
   function remoteEnabled() {
-    return Boolean(config.enableRemoteSubmit && config.supabaseUrl && config.supabaseAnonKey);
+    return Boolean(config.enableRemoteSubmit && config.supabaseUrl && (config.supabasePublishableKey || config.supabaseAnonKey));
   }
 
   function remoteStatusMarkup() {
@@ -764,62 +764,20 @@
   }
 
   async function submitPayloadToSupabase(payload) {
-    const participant = {
-      id: payload.participant.id,
-      public_token: payload.participant.public_token,
-      consent_status: payload.participant.consent_status,
-      consented_at: payload.participant.consented_at,
-      age_band: payload.participant.age_band,
-      education_level: payload.participant.education_level,
-      gender: payload.participant.gender,
-      gender_self_describe: payload.participant.gender_self_describe,
-      condition_id: payload.participant.condition_id,
-      category_order: payload.participant.category_order,
-      completion_status: payload.participant.completion_status,
-      started_at: payload.participant.started_at,
-      completed_at: payload.participant.completed_at
-    };
-    const trials = payload.trials.map((trial) => ({
-      id: trial.id,
+    await supabaseInsert("survey_submissions", {
       participant_id: payload.participant.id,
-      trial_number: trial.trial_number,
-      display_order: trial.display_order,
-      category_id: trial.category_id,
-      statement_id: trial.statement_id,
-      source_id: trial.source_id,
-      pre_source_started_at: trial.pre_source_started_at,
-      pre_source_submitted_at: trial.pre_source_submitted_at,
-      post_source_started_at: trial.post_source_started_at,
-      post_source_submitted_at: trial.post_source_submitted_at,
-      locked_pre_source: trial.locked_pre_source
-    }));
-    const responses = payload.item_responses.map((response) => ({
-      id: response.id,
-      participant_id: response.participant_id,
-      trial_id: response.trial_id,
-      phase: response.phase,
-      item_key: response.item_key,
-      response_type: response.response_type,
-      numeric_value: response.numeric_value,
-      text_value: response.text_value,
-      option_value: response.option_value,
-      interacted: response.interacted,
-      submitted_at: response.submitted_at,
-      created_at: response.created_at
-    }));
-
-    await supabaseInsert("participants", participant);
-    await supabaseInsert("participant_trials", trials);
-    await supabaseInsert("survey_item_responses", responses);
+      public_token: payload.participant.public_token,
+      payload
+    });
   }
 
   async function supabaseInsert(table, rows) {
     const url = `${config.supabaseUrl.replace(/\/$/, "")}/rest/v1/${table}`;
+    const publishableKey = config.supabasePublishableKey || config.supabaseAnonKey;
     const response = await fetch(url, {
       method: "POST",
       headers: {
-        apikey: config.supabaseAnonKey,
-        Authorization: `Bearer ${config.supabaseAnonKey}`,
+        apikey: publishableKey,
         "Content-Type": "application/json",
         Prefer: "return=minimal"
       },
@@ -827,6 +785,14 @@
     });
     if (!response.ok) {
       const body = await response.text();
+      if (table === "survey_submissions" && response.status === 409) {
+        try {
+          const error = JSON.parse(body);
+          if (error.code === "23505" && error.message.includes('"survey_submissions_pkey"')) return;
+        } catch (_) {
+          // Keep the server error when the conflict response is not recognizable.
+        }
+      }
       throw new Error(`${table} insert failed (${response.status}): ${body}`);
     }
   }

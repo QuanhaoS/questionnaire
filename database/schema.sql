@@ -166,3 +166,72 @@ drop trigger if exists participants_set_updated_at on participants;
 create trigger participants_set_updated_at
 before update on participants
 for each row execute function set_updated_at();
+
+create table if not exists survey_submissions (
+  participant_id uuid primary key,
+  public_token text not null unique,
+  payload jsonb not null,
+  submitted_at timestamptz not null default now(),
+  constraint survey_submission_shape check (
+    jsonb_typeof(payload) = 'object'
+    and payload->'participant'->>'id' = participant_id::text
+    and payload->'participant'->>'public_token' = public_token
+    and payload->'participant'->>'consent_status' = 'yes'
+    and payload->'participant'->>'completion_status' = 'completed'
+    and case when jsonb_typeof(payload->'trials') = 'array'
+      then jsonb_array_length(payload->'trials') = 7 else false end
+    and case when jsonb_typeof(payload->'item_responses') = 'array'
+      then jsonb_array_length(payload->'item_responses') > 0 else false end
+    and case when jsonb_typeof(payload->'trial_results_wide') = 'array'
+      then jsonb_array_length(payload->'trial_results_wide') = 7 else false end
+    and octet_length(payload::text) <= 262144
+  )
+);
+
+create or replace view submission_item_responses with (security_invoker = true) as
+select
+  s.participant_id,
+  s.public_token,
+  r.item->>'id' as response_id,
+  r.item->>'trial_id' as trial_id,
+  r.item->>'phase' as phase,
+  r.item->>'item_key' as item_key,
+  r.item->>'response_type' as response_type,
+  case when r.item->>'numeric_value' ~ '^[0-9]{1,3}$'
+    then (r.item->>'numeric_value')::integer end as numeric_value,
+  r.item->>'text_value' as text_value,
+  r.item->>'option_value' as option_value,
+  r.item->>'interacted' as interacted,
+  r.item->>'submitted_at' as item_submitted_at,
+  s.submitted_at
+from survey_submissions s
+cross join lateral jsonb_array_elements(s.payload->'item_responses') as r(item);
+
+create or replace view submission_trial_results_wide with (security_invoker = true) as
+select
+  s.participant_id,
+  s.public_token,
+  t.item->>'condition_id' as condition_id,
+  t.item->>'trial_number' as trial_number,
+  t.item->>'display_order' as display_order,
+  t.item->>'category' as category,
+  t.item->>'statement_id' as statement_id,
+  t.item->>'statement_text' as statement_text,
+  t.item->>'source_id' as source_id,
+  t.item->>'source_label' as source_label,
+  t.item->>'source_description' as source_description,
+  case when t.item->>'understandability' ~ '^[0-9]{1,3}$'
+    then (t.item->>'understandability')::integer end as understandability,
+  case when t.item->>'neutrality' ~ '^[0-9]{1,3}$'
+    then (t.item->>'neutrality')::integer end as neutrality,
+  case when t.item->>'appropriateness' ~ '^[0-9]{1,3}$'
+    then (t.item->>'appropriateness')::integer end as appropriateness,
+  case when t.item->>'confidence_pre_source' ~ '^[0-9]{1,3}$'
+    then (t.item->>'confidence_pre_source')::integer end as confidence_pre_source,
+  case when t.item->>'confidence_post_source' ~ '^[0-9]{1,3}$'
+    then (t.item->>'confidence_post_source')::integer end as confidence_post_source,
+  t.item->>'pre_source_submitted_at' as pre_source_submitted_at,
+  t.item->>'post_source_submitted_at' as post_source_submitted_at,
+  s.submitted_at
+from survey_submissions s
+cross join lateral jsonb_array_elements(s.payload->'trial_results_wide') as t(item);

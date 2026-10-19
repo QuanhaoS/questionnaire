@@ -67,6 +67,10 @@ class StaticSurveyTests(unittest.TestCase):
         self.assertIn("Download JSON", app_js)
         self.assertIn("submitPayloadToSupabase", app_js)
         self.assertIn("/rest/v1/", app_js)
+        self.assertEqual(app_js.count('await supabaseInsert("survey_submissions"'), 1)
+        self.assertEqual(app_js.count("await supabaseInsert("), 1)
+        self.assertIn('Prefer: "return=minimal"', app_js)
+        self.assertNotIn("resolution=ignore-duplicates", app_js)
 
     def test_pages_workflow_exists(self):
         workflow = (ROOT / ".github" / "workflows" / "pages.yml").read_text()
@@ -77,12 +81,21 @@ class StaticSurveyTests(unittest.TestCase):
 
     def test_supabase_config_and_rls_exist(self):
         config = (ROOT / "assets" / "config.js").read_text()
+        schema = (ROOT / "database" / "schema.sql").read_text()
         rls = (ROOT / "database" / "supabase-rls.sql").read_text()
         self.assertIn("enableRemoteSubmit", config)
+        self.assertIn("enableRemoteSubmit: true", config)
         self.assertIn("supabaseUrl", config)
-        self.assertIn("supabaseAnonKey", config)
+        self.assertIn("supabasePublishableKey", config)
+        self.assertIn("create table if not exists survey_submissions", schema)
+        self.assertIn("create or replace view submission_item_responses", schema)
+        self.assertIn("create or replace view submission_trial_results_wide", schema)
         self.assertIn("enable row level security", rls)
-        self.assertIn("grant insert on participants to anon", rls)
+        self.assertIn("grant insert on survey_submissions to anon", rls)
+        self.assertNotIn("grant insert on participants to anon", rls)
+        self.assertNotIn("grant insert on participant_trials to anon", rls)
+        self.assertNotIn("grant insert on survey_item_responses to anon", rls)
+        self.assertIn("submission_trial_results_wide from anon, authenticated", rls)
         self.assertNotIn("service_role", config)
 
     def test_readme_mentions_versions(self):

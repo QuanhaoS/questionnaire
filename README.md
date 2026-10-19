@@ -10,7 +10,7 @@ v1.1 新增：
 - Supabase 前端配置文件：[assets/config.js](/Users/sunquanhao/Documents/ChatGPT/Elly/assets/config.js)
 - Supabase RLS 权限脚本：[database/supabase-rls.sql](/Users/sunquanhao/Documents/ChatGPT/Elly/database/supabase-rls.sql)
 - 数据库兼容 UUID，用于直接写入 PostgreSQL/Supabase。
-- 完成问卷后自动提交到 Supabase；如果未配置 Supabase，继续保留本地 JSON/CSV 下载。
+- 完成问卷后一次性提交到 Supabase 的 `survey_submissions`；如果未配置 Supabase，继续保留本地 JSON/CSV 下载。
 
 ### GitHub Pages 发布
 
@@ -43,15 +43,19 @@ https://quanhaos.github.io/questionnaire/
 window.SURVEY_CONFIG = {
   enableRemoteSubmit: true,
   supabaseUrl: "https://YOUR_PROJECT_ID.supabase.co",
-  supabaseAnonKey: "YOUR_SUPABASE_PUBLISHABLE_OR_ANON_KEY"
+  supabasePublishableKey: "YOUR_SUPABASE_PUBLISHABLE_KEY"
 };
 ```
 
 注意：
 
-- 不要把 Supabase `service_role` key 放进 `assets/config.js`。
-- `assets/config.js` 只能放 publishable/anon key。
-- `database/supabase-rls.sql` 只允许匿名插入，不允许匿名读取、更新或删除。
+- 不要把 Supabase secret 或旧版 `service_role` key 放进 `assets/config.js`。
+- `assets/config.js` 只能放 `sb_publishable_...` key；它会出现在公开网页中。
+- `database/supabase-rls.sql` 只允许匿名插入 `survey_submissions` 一张答卷表，不允许匿名读取、更新或删除，也撤销匿名访问分析视图的权限。
+- 完成页显示 `Submitted to Supabase` 才表示远程保存成功；失败后可重试或下载 JSON/CSV。
+- 每项结果保存在该行的 `payload.item_responses` 中；研究者可查询 `submission_item_responses` 和 `submission_trial_results_wide` 视图。
+
+研究者在 [Supabase Table Editor](https://supabase.com/dashboard/project/rchpslitiywvtpypmeuv/editor) 查看 `survey_submissions`；逐项导出 SQL 见 [database/README.md](/Users/sunquanhao/Documents/ChatGPT/Elly/database/README.md)。正式招募前仍需补齐页面上的研究联系人、机构信息并确认同意文本和未成年人参与规则；当前部署适合 pilot。
 
 ## version1.0 已实现
 
@@ -249,7 +253,7 @@ Trial Screen 2:
 - [database/README.md](/Users/sunquanhao/Documents/ChatGPT/Elly/database/README.md)：数据库使用说明。
 - [docker-compose.yml](/Users/sunquanhao/Documents/ChatGPT/Elly/docker-compose.yml)：本地 PostgreSQL 开发环境。
 
-核心设计是：`participants` 保存参与者级信息，`participant_trials` 保存每位参与者实际看到的 7 个 trial，`survey_item_responses` 逐项保存每一个回答。这样既能完整保留原始答题过程，也能通过 `trial_results_wide` 视图导出适合分析的宽表。
+当前公网收集使用 `survey_submissions`：每位参与者一行，JSONB `payload` 保留参与者信息、7 个 trial 与全部逐项回答；`submission_item_responses` 和 `submission_trial_results_wide` 是仅供研究者查询的分析视图。原有 `participants`、`participant_trials`、`survey_item_responses` 关系表保留作本地或后端扩展，但不对匿名访问者开放。
 
 本地启动方式：
 
@@ -261,8 +265,8 @@ Supabase 使用方式：
 
 1. 在 Supabase SQL Editor 先运行 `database/schema.sql`。
 2. 再运行 `database/seed.sql`。
-3. 后端服务使用 service role key 写入数据。
-4. 前端不要暴露 service role key。
+3. 运行 `database/supabase-rls.sql`，只授权匿名插入 `survey_submissions`。
+4. 前端只配置 publishable key，不要暴露 secret 或 service role key。
 
 建议每个 trial 保存一行分析视图，另有 participant-level metadata 和 item-level 原始记录。
 
